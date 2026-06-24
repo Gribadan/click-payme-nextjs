@@ -90,10 +90,10 @@ async function checkPerform(params: PaymeParams, rpcId: number | string) {
   const accountId = params.account?.[ACCOUNT_FIELD_NAME];
   const amount = Number(params.amount);
   if (!accountId)
-    return paymeError(PAYME_ERRORS.ORDER_BUSY, "Order not found", rpcId, ACCOUNT_FIELD_NAME);
+    return paymeError(PAYME_ERRORS.ACCOUNT_ERROR, "Order not found", rpcId, ACCOUNT_FIELD_NAME);
   const order = await getOrderById(accountId);
   if (!order)
-    return paymeError(PAYME_ERRORS.ORDER_BUSY, "Order not found", rpcId, ACCOUNT_FIELD_NAME);
+    return paymeError(PAYME_ERRORS.ACCOUNT_ERROR, "Order not found", rpcId, ACCOUNT_FIELD_NAME);
   if (amount !== order.amount * 100) // gotcha #1: tiyin
     return paymeError(PAYME_ERRORS.INVALID_AMOUNT, "Invalid amount", rpcId);
   return paymeResult({ allow: true }, rpcId);
@@ -103,10 +103,10 @@ async function checkPerform(params: PaymeParams, rpcId: number | string) {
 async function createTransaction(params: PaymeParams, rpcId: number | string) {
   const accountId = params.account?.[ACCOUNT_FIELD_NAME];
   if (!accountId)
-    return paymeError(PAYME_ERRORS.ORDER_BUSY, "Order not found", rpcId, ACCOUNT_FIELD_NAME);
+    return paymeError(PAYME_ERRORS.ACCOUNT_ERROR, "Order not found", rpcId, ACCOUNT_FIELD_NAME);
   const order = await getOrderById(accountId);
   if (!order)
-    return paymeError(PAYME_ERRORS.ORDER_BUSY, "Order not found", rpcId, ACCOUNT_FIELD_NAME);
+    return paymeError(PAYME_ERRORS.ACCOUNT_ERROR, "Order not found", rpcId, ACCOUNT_FIELD_NAME);
   if (Number(params.amount) !== order.amount * 100)
     return paymeError(PAYME_ERRORS.INVALID_AMOUNT, "Invalid amount", rpcId);
 
@@ -129,17 +129,22 @@ async function createTransaction(params: PaymeParams, rpcId: number | string) {
     );
   }
 
-  // A DIFFERENT transaction already claimed this order
+  // A DIFFERENT transaction already claimed this order. These are transaction-
+  // STATE conditions, so they use -31008 (cannot perform) — NOT the -31050
+  // account-input range. -31060 is not an official Payme code.
   if (order.providerTransId) {
     const state = paymeState(order);
     if (state === PAYME_STATE.PAID)
-      return paymeError(PAYME_ERRORS.ALREADY_PAID, "Order already paid", rpcId);
+      return paymeError(PAYME_ERRORS.CANNOT_PERFORM, "Order already paid", rpcId);
     if (state === PAYME_STATE.PENDING)
-      return paymeError(PAYME_ERRORS.ORDER_BUSY, "Order busy", rpcId, ACCOUNT_FIELD_NAME);
+      return paymeError(PAYME_ERRORS.CANNOT_PERFORM, "Order busy", rpcId);
   }
 
-  // Brand new transaction. Store params.time as create_time — NEVER Date.now()
-  // (gotcha #3: the sandbox calls this twice and compares create_time).
+  // Brand new transaction. PERSIST create_time now and return the SAME stored
+  // value on every retry — that idempotency (sandbox: "the repeated response
+  // must match the first") is the real rule, gotcha #3. We store params.time,
+  // which is stable across the duplicate calls; a server timestamp also works
+  // as long as it's stored once and returned identically on retries.
   await updateOrder(order.id, {
     status: "preparing",
     providerTransId: params.id ?? null,

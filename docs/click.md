@@ -4,7 +4,10 @@ Project-agnostic runbook for integrating **Click** payments (SHOP API) into a
 Next.js App Router app.
 
 - **Protocol:** HTTPS with **MD5-signed form-encoded** requests
-- **Official docs:** https://docs.click.uz/click-api/ (Click SHOP API)
+- **Official docs:** https://docs.click.uz/en/shop-api/ — specifically
+  [requests & signatures](https://docs.click.uz/en/shop-api/requests/) and
+  [error codes](https://docs.click.uz/en/shop-api/errors/). (The old
+  `/click-api/` path was retired when Click reorganized its docs.)
 - **Payment URL base:** `https://my.click.uz/services/pay`
 - **Currency:** plain UZS (no tiyin conversion, unlike Payme)
 
@@ -212,6 +215,25 @@ export const CLICK_ERRORS = {
 Click compares the exact integer in your response — don't invent new codes
 or repurpose. Always return JSON
 `{ click_trans_id, merchant_trans_id, merchant_prepare_id|merchant_confirm_id, error, error_note }`.
+
+The constant **names** above are for your code's readability — Click only checks
+the integer. For reference, the official `error_note` strings from the
+[Click error table](https://docs.click.uz/en/shop-api/errors/) are:
+
+| Code | Official `error_note` |
+|---|---|
+| `0` | Success |
+| `-1` | SIGN CHECK FAILED |
+| `-2` | Incorrect parameter amount |
+| `-3` | Action not found |
+| `-4` | Already paid |
+| `-5` | User does not exist *(lookup by `merchant_trans_id` — what we label `ORDER_NOT_FOUND`)* |
+| `-6` | Transaction does not exist *(lookup by `merchant_prepare_id`)* |
+| `-7` | Failed to update user |
+| `-8` | Error in request from click |
+| `-9` | Transaction cancelled |
+
+If your UI surfaces the literal note, use Click's exact wording above.
 
 ---
 

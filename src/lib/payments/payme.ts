@@ -14,12 +14,17 @@ import { NextResponse } from "next/server";
 export const ACCOUNT_FIELD_NAME = process.env.PAYME_ACCOUNT_FIELD || "order_id";
 
 // ── Error codes — Payme sandbox validates the EXACT integer, not the message ──
+// Sourced from https://developer.help.paycom.uz/metody-merchant-api/oshibki-errors/
 export const PAYME_ERRORS = {
   INVALID_AMOUNT: -31001,
   TRANSACTION_NOT_FOUND: -31003,
-  CANNOT_PERFORM: -31008,
-  ALREADY_PAID: -31060,
-  ORDER_BUSY: -31050, // account/order error range: -31050..-31099, needs `data`
+  CANNOT_CANCEL: -31007, // can't cancel: goods/services already delivered
+  CANNOT_PERFORM: -31008, // wrong transaction state (e.g. order already paid / busy)
+  // -31050..-31099 is a MERCHANT-DEFINED range reserved for invalid `account`
+  // input ONLY (e.g. order_id not found). Responses in this range MUST include
+  // `data: "<account_field_name>"`. No single code in the range is pre-defined
+  // by Payme — do NOT use it for transaction-state conditions (use -31008).
+  ACCOUNT_ERROR: -31050,
   AUTH_FAILED: -32504,
   METHOD_NOT_FOUND: -32601,
   INVALID_JSON: -32700,

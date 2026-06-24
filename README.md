@@ -1,5 +1,7 @@
 # Click & Payme for Next.js
 
+**English** · [Русский](README.ru.md) · [Oʻzbekcha](README.uz.md)
+
 > Drop-in **Click** and **Payme (Paycom)** payment integration for Next.js (App Router) — the two payment gateways every Uzbekistan product needs, done right the first time.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -105,7 +107,7 @@ into your app's DB, so you drop the files into an existing Next.js project.
 | **[docs/payme.md](docs/payme.md)** | Payme JSON-RPC — all six methods, tiyin conversion, sandbox idempotency tests, error codes, go-live checklist |
 | **[docs/deployment-notes.md](docs/deployment-notes.md)** | The nginx trailing-slash `ERR_TOO_MANY_REDIRECTS` trap and other callback-reachability issues that break go-lives |
 
-**Official references:** [Click SHOP API](https://docs.click.uz/click-api/) ·
+**Official references:** [Click SHOP API](https://docs.click.uz/en/shop-api/) ·
 [Payme developer docs](https://developer.help.paycom.uz/) ·
 [Payme sandbox](https://test.paycom.uz/)
 

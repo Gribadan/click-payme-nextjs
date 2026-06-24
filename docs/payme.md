@@ -41,7 +41,8 @@ Flow from a user's perspective:
 
 ## 2. Credentials you need from Payme
 
-Go to https://merchant.paycom.uz/ → your cabinet:
+Go to https://merchant.payme.uz/ → your cabinet (the brand migrated from Paycom
+to Payme; the old `merchant.paycom.uz` now 301-redirects here):
 
 | Field | Where it comes from | Storage |
 |---|---|---|
@@ -85,14 +86,22 @@ epoch — `~1,750,000,000,000`. They **overflow PostgreSQL's `integer` type**
 (max ~2.1 billion). The simplest fix is to stash them in the JSON `metadata`
 field — see `mergedMeta()` / `readMeta()` in `store.ts`.
 
-### Gotcha #3 — `create_time` MUST come from `params.time`, not `Date.now()`
+### Gotcha #3 — `create_time` must be persisted once and returned identically on retries
 
 Payme's sandbox runs an idempotency test: it calls `CreateTransaction` twice
-in a row with the same Payme transaction ID and expects you to return **the
-same `create_time` both times**. If you use `Date.now()` the second value
-differs by a few ms, the sandbox marks the test failed, and you can't go live.
+in a row with the same Payme transaction ID and expects the **second response to
+equal the first** ("ответ должен совпадать с ответом из первого запроса"). The
+documented rule is about *idempotency of the stored value*, not the *source* of
+the timestamp.
 
-Always store and return `params.time` from the **first** call.
+So: **persist `create_time` on the first call and return the stored value on
+every retry.** Per the official Payme docs, `create_time` is "the transaction
+creation time in the merchant's system" — a server-side value (the official
+PaycomUZ reference template uses the server clock). This repo stores
+`params.time`, which is stable across the two duplicate calls and therefore also
+satisfies the sandbox; either source is fine as long as it's stored once and
+echoed identically. What breaks the test is generating a **fresh** `Date.now()`
+on the retry — then the two responses differ by a few ms and you can't go live.
 
 ### Gotcha #4 — `perform_time` must persist even after cancellation
 
@@ -116,15 +125,24 @@ Payme sandbox validates the exact integer code, not the message. Wrong code
 |---|---|---|
 | `-31001` | Invalid amount | `amount !== order.amount * 100` |
 | `-31003` | Transaction not found | lookup returns null |
-| `-31008` | Cannot perform operation | wrong state for action, timeout |
-| `-31050` to `-31099` | Account / order error | with `data: "<account_field_name>"` |
-| `-31060` | Order already paid | a different tx already paid this order |
+| `-31007` | Cannot cancel | goods/services already delivered (only if your sale is non-refundable) |
+| `-31008` | Cannot perform operation | wrong transaction **state**: order already paid, busy, or timed out |
+| `-31050` to `-31099` | Invalid `account` input | order/account not found — **must** include `data: "<account_field_name>"` |
 | `-32504` | Auth failed | bad Basic auth header |
 | `-32601` | Method not found | unknown RPC method |
 | `-32700` | Invalid JSON | body parse error |
 
-For `-31050` and friends, **you must include `data: "<field_name>"`** in the
-error response so Payme highlights the right cart field to the user.
+Two things the official docs are strict about, and that earlier versions of this
+guide got wrong:
+
+- The **`-31050…-31099` range is reserved for invalid `account` input only**
+  (e.g. the `order_id` doesn't exist) and every response in it **must** include
+  `data: "<account_field_name>"` so Payme highlights the right cart field. It is
+  a merchant-defined range — no single code in it is pre-defined by Payme.
+- **Transaction-state problems use `-31008`, not the `-31050` range.** "Order
+  already paid" / "order busy" are state conditions → return `-31008`. There is
+  **no official `-31060`**; don't invent codes inside the account range for
+  state conditions.
 
 ### Gotcha #7 — Response Content-Type matters
 
@@ -268,7 +286,7 @@ number), or wrong timestamp source.
 | Symptom | Most likely cause |
 |---|---|
 | All callbacks return `-32504` | Auth header decode wrong, or you check `Paycom:Paycom:key` instead of `Paycom:key` |
-| Sandbox: "create_time mismatch" | Using `Date.now()` instead of `params.time` (gotcha #3) |
+| Sandbox: "create_time mismatch" | Generating a fresh timestamp on the retry instead of returning the stored `create_time` (gotcha #3) |
 | Sandbox: "Cannot test cancel-after-perform" | `perform_time` not preserved after cancel (gotcha #4) |
 | Production: amounts off by 100× | Forgot tiyin → UZS conversion (gotcha #1) |
 | `Internal error` 500s in production | Integer overflow on timestamps — move them to JSON metadata (gotcha #2) |
@@ -285,5 +303,7 @@ also updating the cabinet will break every callback:
 - **Account field name** — must match cabinet exactly
 - **JSON-RPC response shape** — Payme validates fields strictly
 - **Error code ranges** — sandbox locks you to specific codes
-- **Content-Type** — `text/json; charset=UTF-8`
-- **Timestamp source for `create_time`** — `params.time`, never `Date.now()`
+- **Content-Type** — `text/json; charset=UTF-8` (the Merchant API uses
+  `text/json`, **not** `application/json` — confirmed in the official docs)
+- **`create_time` idempotency** — persist it on the first `CreateTransaction`
+  and return the **same stored value** on every retry (don't regenerate it)
